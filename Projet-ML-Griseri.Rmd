@@ -1,0 +1,407 @@
+---
+title: "Projet Machine Learning"
+author: "Manuel D. Griseri, 20242324, Id: 10"
+date: "UEVE, M1MINT, Année 2024-2025"
+output:
+  pdf_document:
+    toc: true
+    number_sections: true
+editor_options: 
+  chunk_output_type: inline
+header-includes:
+  - \renewcommand{\contentsname}{Sommaire}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+---
+
+# Étude de simulation
+
+## Simulation des données
+
+Je commence par simuler deux échantillons de même taille (100 individus chacun). Le premier échantillon est généré aléatoirement selon une loi normale bivariée de moyenne (0,0) et de matrice de covariance égale à \(\sigma^2\) l'identité (groupe 1, représenté par des cercles bleus). Le deuxième échantillon est généré selon une loi normale bivariée de moyenne (\(\varepsilon\),\(\varepsilon\)) et la même matrice de covariance (groupe 2, représenté par des triangles rouges). J'ai choisi \(\varepsilon\)=2 et \(\sigma^2\)=1. À la fin on obtient : X, un vecteur contenant les valeurs de X1 et X2 pour chaque individu; y, un vecteur binaire indiquant si un individu appartient au premier ou au deuxième groupe.
+
+```{r}
+library(MASS)
+library(ggplot2)
+set.seed(0)
+
+# Fonction de simulation
+simulate_data <- function(n, mu1, Sigma1, mu2, Sigma2) {
+  X1 <- mvrnorm(n/2, mu = mu1, Sigma = Sigma1)
+  X2 <- mvrnorm(n/2, mu = mu2, Sigma = Sigma2)
+  X <- rbind(X1, X2)
+  y <- c(rep(1, n/2), rep(2, n/2))
+  list(X = X, y = y)
+}
+
+# Paramètres de simulation
+eps <- 2
+sig <- 1
+n <- 200
+mu1 <- c(0, 0)
+mu2 <- c(eps, eps)
+Sigma <- (sig^2) * matrix(c(1, 0, 0, 1), 2, 2)
+
+# Génération des données
+sim_data <- simulate_data(n, mu1, Sigma, mu2, Sigma)
+X <- sim_data$X
+y <- sim_data$y
+
+# Visualisation
+df <- data.frame(X1 = X[, 1], X2 = X[, 2], y = factor(y))
+ggplot(df, aes(x = X1, y = X2, color = y, shape = y)) +
+  geom_point(size = 3) +
+  scale_color_manual(values = c("blue", "red")) +
+  labs(title = "Simulation des données",
+       x = "X1", y = "X2")
+```
+
+## CART
+
+Sur ces données simulées, nous souhaitons utiliser une première méthode d'apprentissage supervisé pour la classification : la méthode CART. L'objectif est de prédire la variable cible y, c'est-à-dire de classifier chaque individu dans le groupe 1 ou le groupe 2 en fonction de ses valeurs pour les variables X1 et X2. 
+
+La méthode CART repose sur la construction d’un arbre de décision, généré automatiquement en R avec la fonction rpart. Tout d'abord, la méthode identifie les splits optimaux en minimisant une fonction d'impureté (comme l'entropie). Ensuite, elle développe l’arbre, qui devient progressivement très complexe, jusqu'à ce que chaque individu soit presque parfaitement classé. Cependant, pour éviter le surapprentissage, une phase d'élagage intervient. Cette phase consiste à sélectionner l’arbre optimal, en minimisant un risque pénalisé par la complexité.
+
+Graphiquement, j’ai représenté l’arbre de décision obtenu, ainsi qu’un graphique montrant en ordonnées l’erreur en validation croisée, normalisée par rapport à l’erreur en validation croisée du modèle le plus simple (sans splits). Sur l’axe des abscisses, on trouve la complexité de l’arbre, représentée en haut par le nombre de feuilles terminales et en bas par les valeurs du paramètre de complexité \(\alpha\).
+
+De plus, j’ai appliqué une technique essentielle en apprentissage supervisé : la division du jeu de données en un ensemble d'entraînement (environ 2/3 des données) et un ensemble de test (le tiers restant). Cette séparation est cruciale, car l'erreur calculée sur l'ensemble d'apprentissage est biaisée et sous-estime l’erreur réelle commise par le modèle. L’évaluation sur l’ensemble de test, qui n’a pas été utilisé pour entraîner l’arbre, permet d’obtenir une estimation plus fiable. On observe que l'erreur sur les données de test est plus élevée, atteignant 8.57%.
+
+Enfin, en faisant varier la valeur de \(\varepsilon\), on remarque que plus cette valeur s'éloigne de 0, plus l'arbre devient simple et l'erreur diminue, car les deux groupes sont bien séparés. À l'inverse, plus \(\varepsilon\) se rapproche de 0, plus l'arbre devient complexe et l'erreur augmente.
+
+```{r}
+library(rpart)
+library(rpart.plot)
+
+# Split training-test
+train.indices <- sample(1:n, 130, replace = FALSE)
+test.indices <- c(1:n)[-train.indices]
+
+# Création arbre
+mytree <- rpart(y ~ ., data = df[train.indices,])
+rpart.plot(mytree)
+plotcp(mytree)
+
+# Erreurs
+pred_test <- predict(mytree, newdata = df[test.indices,])
+pred_train <- predict(mytree, newdata = df[train.indices,])
+y_test <- df[test.indices,]$y
+y_train <- df[train.indices,]$y
+y.hat_test <- apply(pred_test, 1, which.max)
+y.hat_train <- apply(pred_train, 1, which.max)
+paste("L'erreur en apprentissage est", mean(y_train != y.hat_train))
+paste("L'erreur en test est", mean(y_test != y.hat_test))
+```
+
+## Classifieur de Bayes
+
+Une deuxième méthode d'apprentissage supervisé pour la classification est le classifieur de Bayes. Dans ce cas, je n’ai pas effectué de division entre un ensemble d'entraînement et un ensemble de test, car nous sommes dans un contexte de simulation où "la vérité" est connue. Cependant, avec des données réelles, il aurait été nécessaire de vérifier d'abord que les deux échantillons suivent effectivement des lois normales. Pour cela, on pourrait utiliser des tests de normalité (comme le test de Shapiro-Wilk ou le test de Kolmogorov-Smirnov). Ensuite, il aurait fallu estimer empiriquement les paramètres des distributions (moyennes et matrices de covariance) à partir des données de l’ensemble d’apprentissage avant d’appliquer le classifieur de Bayes.
+
+```{r}
+library(mvtnorm)
+
+# Fonction eta
+eta <- function(x, mu1, Sigma1, mu2, Sigma2, pi1 = 1/2) {
+  posterior <- (pi1 * dmvnorm(x, mean = mu1, sigma = Sigma1)) /
+    (pi1 * dmvnorm(x, mean = mu1, sigma = Sigma1) + (1 - pi1) 
+     * dmvnorm(x, mean = mu2, sigma = Sigma2))
+  return(posterior)
+}
+
+# Génération de la grille
+create_grid <- function(X, length_out = 100) {
+  x1 <- seq(min(X[, 1]), max(X[, 1]), length.out = length_out)
+  x2 <- seq(min(X[, 2]), max(X[, 2]), length.out = length_out)
+  expand.grid(x1 = x1, x2 = x2)
+}
+grille <- create_grid(X)
+
+# Évaluation de eta sur la grille
+evaluate_eta <- function(grille, mu1, Sigma1, mu2, Sigma2) {
+  grille$eta_value <- apply(data.frame(grille), 1, function(x) 
+    eta(x, mu1, Sigma1, mu2, Sigma2))
+  grille
+}
+grille <- evaluate_eta(grille, mu1, Sigma, mu2, Sigma)
+
+# Visualisation frontière de décision
+df_points <- data.frame(x1 = X[, 1], x2 = X[, 2], y = factor(y))
+ggplot(grille, aes(x = x1, y = x2)) +
+  geom_raster(aes(fill = eta_value < 0.5), alpha = 0.5) +
+  scale_fill_manual(values = c("blue", "red"), labels = c("eta > 1/2", "eta < 1/2")) +
+  geom_contour(aes(z = eta_value), color = "black", size = 0.5) +
+  geom_contour(aes(z = eta_value), breaks = c(0.5), color = "black", size = 1) +
+  geom_point(data = df_points, aes(x = x1, y = x2, color = y, shape = y), size = 3) +
+  scale_color_manual(values = c("blue", "red")) +
+  labs(title = "Contours de la fonction eta avec points de X",
+       x = "X1", y = "X2",
+       fill = "eta value")
+```
+
+Le risque est une espérance que l'on peut estimer par 
+
+$$
+\hat{R_n} = \frac{1}{n} \sum_i \mathbb{I}_{y_i\neq \hat{y}_i} 
+$$
+
+```{r}
+# Estimation du risque
+evaluate_risk <- function(X, y, mu1, Sigma1, mu2, Sigma2) {
+  y_hat <- (apply(X, 1, function(x) eta(x, mu1, Sigma1, mu2, Sigma2)) < 0.5) + 1
+  mean(y != y_hat)
+}
+Risque <- evaluate_risk(X, y, mu1, Sigma, mu2, Sigma)
+paste("Le risque total estimé est de", Risque)
+```
+
+On observe clairement sur le graphique que 12 points sur 200, soit 6%, sont mal classés.
+
+a)
+
+$$
+P(x \mid y = 1) = \mathcal{N}_2 \left( x; \mu_1 = \begin{pmatrix} 0 \\ 0 \end{pmatrix}, \Sigma = \sigma^2 \begin{pmatrix} 1 & 0 \\ 0 & 1 \end{pmatrix} \right) = \frac{1}{2\pi \sqrt{\det \Sigma}} \exp \left( -\frac{1}{2} (x - \mu_1)^\top \Sigma^{-1} (x - \mu_1) \right)
+$$
+
+$$
+P(x \mid y = 2) = \mathcal{N}_2 \left( x; \mu_2 = \begin{pmatrix} \varepsilon \\ \varepsilon \end{pmatrix}, \Sigma = \sigma^2 \begin{pmatrix} 1 & 0 \\ 0 & 1 \end{pmatrix} \right) = \frac{1}{2\pi \sqrt{\det \Sigma}} \exp \left( -\frac{1}{2} (x - \mu_2)^\top \Sigma^{-1} (x - \mu_2) \right)
+$$
+
+$$
+\Pi_1 := P(y = 1) \quad \Pi_2 := P(y = 2)
+$$
+
+Classifieur :
+
+$$
+\hat{f}(x) = \arg\max_{y \in \{1,2\}} P(y \mid x) = 
+\begin{cases} 
+1 & \text{si } P(y = 1 \mid x) > \frac{1}{2} \\
+2 & \text{sinon} 
+\end{cases}
+$$
+
+Par le théorème de Bayes :
+
+$$
+P(y = 1 \mid x) = \frac{P(x \mid y = 1)P(y = 1)}{P(x \mid y = 1)P(y = 1) + P(x \mid y = 2)P(y = 2)}
+$$
+
+$$
+= \frac{\Pi_1 \exp \left( -\frac{1}{2} (x - \mu_1)^\top \Sigma^{-1} (x - \mu_1) \right)}{\Pi_1 \exp \left( -\frac{1}{2} (x - \mu_1)^\top \Sigma^{-1} (x - \mu_1) \right) + \Pi_2 \exp \left( -\frac{1}{2} (x - \mu_2)^\top \Sigma^{-1} (x - \mu_2) \right)} > \frac{1}{2}
+$$
+
+Multiplication par quantités > 0 :
+
+$$
+\Pi_1 \exp \left( -\frac{1}{2} (x - \mu_1)^\top \Sigma^{-1} (x - \mu_1) \right) > \Pi_2 \exp \left( -\frac{1}{2} (x - \mu_2)^\top \Sigma^{-1} (x - \mu_2) \right)
+$$
+
+$$
+\frac{\exp \left( -\frac{1}{2} (x - \mu_1)^\top \Sigma^{-1} (x - \mu_1) \right)}{\exp \left( -\frac{1}{2} (x - \mu_2)^\top \Sigma^{-1} (x - \mu_2) \right)} > \frac{\Pi_2}{\Pi_1}
+$$
+
+$$
+\frac{1}{2} (-(x - \mu_1)^\top \Sigma^{-1} (x - \mu_1) + (x - \mu_2)^\top \Sigma^{-1} (x - \mu_2)) > \log\left(\frac{\Pi_2}{\Pi_1}\right)
+$$
+
+Par symétrie de \(\Sigma^{-1}\) :
+
+$$
+\frac{1}{2} \left( 2 \mu_1^\top \Sigma^{-1} x - 2 \mu_2^\top \Sigma^{-1} x + \mu_2^\top \Sigma^{-1} \mu_2 - \mu_1^\top \Sigma^{-1} \mu_1 \right) > \log\left(\frac{\Pi_2}{\Pi_1}\right)
+$$
+
+$$
+\mu_1^\top \Sigma^{-1} x - \mu_2^\top \Sigma^{-1} x - \mu_2^\top \Sigma^{-1} \left( -\frac{1}{2} \mu_2 \right) + \mu_1^\top \Sigma^{-1} \left( -\frac{1}{2} \mu_1 \right) > \log\left(\frac{\Pi_2}{\Pi_1}\right)
+$$
+
+$$
+A := (\mu_1 - \mu_2)^\top \Sigma^{-1} \left( x - \frac{1}{2} (\mu_1 + \mu_2) \right) > \log\left(\frac{\Pi_2}{\Pi_1}\right)
+$$
+
+$$
+\Rightarrow\hat{f}(x) = 
+\begin{cases} 
+1 & \text{si } (\mu_1 - \mu_2)^\top \Sigma^{-1} \left( x - \frac{1}{2} (\mu_1 + \mu_2) \right) > \log\left(\frac{\Pi_2}{\Pi_1}\right) \\
+2 & \text{sinon}
+\end{cases}
+$$
+
+Dans ce cas particulier :
+
+$$
+A = (-\varepsilon \; -\varepsilon) \frac{1}{\sigma^2} \begin{pmatrix} 1 & 0 \\ 0 & 1 \end{pmatrix} \begin{pmatrix} x_1 - \frac{\varepsilon}{2} \\ x_2 - \frac{\varepsilon}{2} \end{pmatrix} > \log\left(\frac{\Pi_2}{\Pi_1}\right) = \log\left(\frac{1/2}{1/2}\right) = \log(1) = 0
+$$
+
+$$
+-\frac{\varepsilon}{\sigma^2} x_1 - \frac{\varepsilon}{\sigma^2} x_2 + \frac{\varepsilon^2}{\sigma^2} > 0
+$$
+
+$$
+\Rightarrow x_2 < -x_1 + \varepsilon
+$$
+
+La frontière de décision est une droite (qui est bien la même que celle présenté dans le graphique). Si l’individu x se trouve au dessous de celle-ci, il sera classifié comme étant de la classe 1, sinon de la classe 2.
+
+b)
+
+On peut encore ajouter, en ce qui concerne la loi de A, que puisque A est combinaison linéaire de x1 et x2, par propriété du vecteur gaussien x :
+
+$$
+x \sim \mathcal{N}_2(\mu_1, \Sigma)
+$$
+
+$$
+\Rightarrow A \sim \mathcal{N} \left( E(A), V(A) \right)
+$$
+
+Linéarité de l'espérance et propriété de la variance :
+
+$$
+A \sim \mathcal{N} \left( (\mu_1 - \mu_2)^\top \Sigma^{-1} \left( \mu_1 - \frac{1}{2} (\mu_1 + \mu_2) \right), (\mu_1 - \mu_2)^\top \Sigma^{-1} \Sigma (\Sigma^{-1})^\top (\mu_1 - \mu_2) \right)
+$$
+
+Symétrie de \( \Sigma^{-1} \) :
+
+$$
+A \sim \mathcal{N} \left( (\mu_1 - \mu_2)^\top \Sigma^{-1} \left( \frac{1}{2} \mu_1 - \frac{1}{2} \mu_2 \right), (\mu_1 - \mu_2)^\top \Sigma^{-1} (\mu_1 - \mu_2) \right)
+$$
+
+$$
+\Rightarrow \delta^2 = (\mu_1 - \mu_2)^\top \Sigma^{-1} (\mu_1 - \mu_2)
+$$
+
+Dans ce cas :
+
+$$
+\delta^2 = (-\varepsilon \; -\varepsilon) \frac{1}{\sigma^2} \begin{pmatrix} 1 & 0 \\ 0 & 1 \end{pmatrix} \begin{pmatrix} -\varepsilon \\ -\varepsilon \end{pmatrix} = \frac{2 \varepsilon^2}{\sigma^2}
+$$
+
+---
+
+# Jeu de données
+
+## Statistique descriptive
+
+J'ai utilisé le jeu de données PimaIndiansDiabetes2, comme suggéré dans la documentation, car le jeu de données original, PimaIndiansDiabetes, contient des valeurs de 0 pour certaines variables, ce qui n'a pas de sens physique. Dans cette version corrigée, ces valeurs de 0 ont été remplacées par des valeurs manquantes (NA).
+
+Ce dataset provient de l'UCI Repository Of Machine Learning Databases (le créateur original est le National Institute of Diabetes and Digestive and Kidney Diseases) et contient des données sur 768 Indiens Pima (Arizona) avec 9 variables :
+
+- pregnant : Nombre de fois que la femme est tombée enceinte
+- glucose : Concentration en glucose plasmatique après stress test
+- pressure : Pression artérielle diastolique (mm Hg)
+- triceps : Épaisseur du pli cutané tricipital (mm)
+- insulin : Niveau d'insuline sérique après stress test
+- mass : Indice de masse corporelle
+- pedigree : Fonction d'hérédité pour le diabète
+- age : Âge de la personne (années)
+- diabetes : Variable binaire (pos=diabétique, neg=non diabétique)
+
+Les caractéristiques du jeu de données ainsi que les distributions de fréquence des variables quantitatives sont présentées ci-dessous. Toutes les variables sont liées à la présence ou non de diabète de type 2, ce qui explique pourquoi, dans les boxplots, on observe un décalage de la distribution des individus diabétiques par rapport à celle des non-diabétiques.
+
+Enfin, en observant les pair plots, on remarque que les individus diabétiques (les roses) et non-diabétiques (les bleus clairs) semblent se diviser en deux groupes relativement distincts.
+
+```{r}
+library(mlbench)
+data(PimaIndiansDiabetes2)
+?PimaIndiansDiabetes2
+pid <- PimaIndiansDiabetes2
+head(pid)
+str(pid)
+summary(pid)
+
+# Histogrammes des variables
+par(mfrow = c(2, 4))
+for (col in names(pid)[-ncol(pid)]) {
+  hist(pid[[col]], main = paste("H.", col), xlab = col, col = "lightblue")
+}
+
+# Boxplots des variables par valeur de diabetes 
+for (col in names(pid)[-ncol(pid)]) {
+  boxplot(pid[[col]] ~ pid$diabetes, main = paste("B.", col),
+          xlab = "diabetes", ylab = col, col = c("lightblue", "pink"))
+}
+
+# Pair plot des variables
+pairs(pid[, -ncol(pid)], col = c("lightblue", "pink")[as.factor(pid$diabetes)], pch = 20, 
+      main = "Pair plot des variables")
+
+# Corrélation
+pid_na <- na.omit(pid)
+dim(pid_na)
+heatmap(cor(pid_na[, -ncol(pid_na)]), main = "Matrice de corrélation",
+        Rowv = NA, Colv = NA)
+cor(pid_na[, -ncol(pid_na)])
+```
+
+## K-means
+
+En premier lieu, il est essentiel de comprendre comment traiter les valeurs manquantes (NA), car la fonction kmeans ne fonctionne pas en leur présence. En effet, plusieurs techniques existent, chacune ayant ses propres contre-indications. La première méthode consiste à éliminer les lignes contenant des valeurs manquantes. Cependant, si les données ne sont pas manquantes de manière aléatoire mais suivent un certain schéma, cette approche risque de biaiser l'analyse. De plus, dans mon cas, cette méthode aurait entraîné la perte de presque la moitié des individus, ce qui aurait considérablement réduit la quantité d'information disponible. Je n'ai donc pas retenu cette solution. Une deuxième méthode classique consiste à remplacer les valeurs manquantes par la moyenne ou la médiane des variables correspondantes. Cependant, cette méthode peut biaiser la variance en la sous-estimant. J'ai donc opté pour une solution adaptée à mon cas. J'ai remarqué que les variables problématiques étaient principalement insulin (374 NA) et triceps (227 NA), et qu'elles montraient une corrélation relativement forte avec, respectivement, glucose et mass (ce qui est cohérent avec l'intuition). Cela signifie que l'information apportée par insulin et triceps n'est pas significativement différente de celle apportée par glucose et mass. J'ai donc décidé de supprimer ces deux variables du jeu de données.
+
+En deuxième lieu, j’ai standardisé les variables quantitatives restantes. Cela est une étape classique avant d’appliquer les k-means, car cet algorithme repose sur le calcul de distances euclidiennes entre les individus. Comparer directement des variables comme l’âge et la pression sanguine n’a pas de sens, car elles ont des unités de mesure différentes et des échelles disparates. Ensuite, j’ai utilisé la méthode du coude pour déterminer le nombre optimal de groupes. Cette méthode repose sur le calcul de l’inertie intraclasse totale pour différents nombres de groupes. L’algorithme des k-means vise à minimiser cette inertie intraclasse, mais, naturellement, elle diminue avec l’augmentation du nombre de classes, car plus il y a de classes, moins chaque classe contient d’individus et plus ces derniers sont proches de leur centre. Cependant, un trop grand nombre de classes n’est pas informatif sur les véritables groupes dans lesquels les individus peuvent être classés. C’est pourquoi on choisit le nombre de classes correspondant au "coude" du graphique. Dans mon cas, le coude se trouve autour de 3 ou 4 groupes. J’ai utilisé l’option nstart=30, ce qui signifie que l’algorithme démarre 30 fois avec des centres initialisés différemment. Parmi ces itérations, on conserve les classes pour lesquelles l’inertie intraclasse est la plus faible. Cette méthode permet de s’assurer, dans une certaine mesure, que l’on atteint un minimum global.
+
+```{r}
+# Standardisation
+pid2 <- na.omit(pid[, -c(4, 5)])
+dim(pid2)
+pid2[, -ncol(pid2)] <- scale(pid2[, -ncol(pid2)], center = TRUE, scale = TRUE)
+
+# Méthode du coude
+set.seed(0)
+wss <- sapply(1:10, function(k) kmeans(pid2[, -ncol(pid2)], k, nstart = 30)$tot.withinss)
+plot(1:10, wss, type = "b", xlab = "Nombre de clusters", ylab = "Inertie intra-cluster")
+```
+
+En troisième lieu, j’ai représenté un tableau de contingence. Dans un contexte d’apprentissage non supervisé, il n’existe pas de variable cible, et l’objectif n’est pas de faire des prévisions, mais plutôt, dans le cas des k-means, d’identifier des groupes distincts d’individus et d’essayer de les interpréter. Cependant, dans ce cas, j’ai supposé que l’objectif était d’évaluer si l’algorithme des k-means parvenait à séparer correctement les individus diabétiques de ceux non diabétiques. C’est pourquoi j’ai choisi k=2, contrairement à ce que recommandait la méthode du coude. Le tableau de contingence montre des résultats un peu mitigés. Le pourcentage de vrais positifs est d’environ 70%, et celui des vrais négatifs est similaire. Le problème se situe dans l’interprétation des deux groupes identifiés par les k-means. Le groupe 2 est relativement clair : il peut être interprété comme le groupe des individus non diabétiques, puisque 82% des individus de ce groupe sont non diabétiques. Cependant, le groupe 1, censé représenter les individus diabétiques, est plus ambigu : seulement 57% des individus de ce groupe sont réellement diabétiques. Ainsi, il existe un recouvrement imparfait entre les groupes identifiés par les k-means et la division réelle en diabétiques et non diabétiques. Cela pourrait s’expliquer par l’existence d’un troisième groupe sous-jacent qui divise encore davantage les non diabétiques, en compliquant l'interprétation. En effet, le problème semble être qu’il y a trop d’individus non diabétiques classés dans le groupe 1.
+
+```{r}
+# Table de contingence
+res <- kmeans(pid2[, -ncol(pid2)], 2, nstart = 30)
+table(Kmeans = res$cluster, Diabète = pid2$diabetes)
+```
+
+Enfin, j’ai représenté les centres des deux groupes identifiés par les k-means sur un plan bidimensionnel utilisant les variables age et glucose. L’interprétation est ici claire et cohérente avec l’intuition : le centre du groupe 1 (associé aux individus diabétiques) se situe à des niveaux plus élevés de age et de glucose par rapport au centre du groupe 2, qui correspond aux individus non diabétiques.
+
+```{r}
+# Visualisation centres
+contour(kde2d(pid2[, 2], pid2[, 6]))
+points(pid2[, c(2, 6)], col = c("lightblue", "pink")[pid2$diabetes], pch = 20)
+title(xlab = "glucose", ylab = "age", main = "Centres K-means")
+points(res$center[, c(2, 6)], cex = 3, pch = 21, bg = "red")
+```
+
+## CART
+
+Nous revenons maintenant à une méthode supervisée. J'ai à nouveau utilisé le jeu de données complet, car rpart dispose d'un moyen automatique de gérer les valeurs manquantes (la méthode de la "surrogate variable"). On peut noter que toutes les variables, à l'exception de triceps, sont utilisées pour prédire si un individu est diabétique.
+
+```{r}
+# Split training-test
+set.seed(0)
+train.indices <- sample(1:nrow(pid), (2/3) * nrow(pid), replace = FALSE)
+test.indices <- c(1:nrow(pid))[-train.indices]
+
+# Création arbre
+mytree <- rpart(diabetes ~ ., data = pid[train.indices,])
+rpart.plot(mytree)
+plotcp(mytree)
+
+# Erreurs
+pred_test <- predict(mytree, newdata = pid[test.indices,])
+pred_train <- predict(mytree, newdata = pid[train.indices,])
+d_test <- pid[test.indices,]$diabetes
+d_train <- pid[train.indices,]$diabetes
+d.hat_test <- apply(pred_test, 1, which.max)
+d.hat_train <- apply(pred_train, 1, which.max)
+paste("L'erreur en apprentissage est", mean(as.numeric(d_train) != d.hat_train))
+paste("L'erreur en test est", mean(as.numeric(d_test) != d.hat_test))
+```
+
+---
+
+# Bibliographie
+
+- Murphy, K. P. (2022). Probabilistic Machine Learning: An Introduction. MIT Press.
+- Ambroise, C. Introduction à l'apprentissage statistique. 2024. Matériaux du cours (diapositives, notes, codes). Université d'Évry.
+- Taupin, M. L. Introduction à R. 2024. Matériaux du cours (notes, codes). Université d'Évry.
