@@ -1,0 +1,789 @@
+---
+title: "TD : SVM"
+subtitle: "Projet 1 : Optimisation sous une contrainte"
+author: "Manuel Griseri, Julien Villon, Nanga Yeo"
+date: "02/19/2025"
+output:
+  prettydoc::html_pretty:
+    toc: true
+    toc_depth: 2
+    number_sections: true
+css: style.css
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Le problème dual du SVM
+
+Pour un classifieur à marge maximale (SVM), le problème primal est transformé en un problème dual qui s'exprime sous la forme :
+
+$$
+\begin{array}{rl}
+\displaystyle \max_{\alpha} & W(\alpha) = \sum_{i=1}^{n} \alpha_i - \frac{1}{2} \sum_{i=1}^{n} \sum_{j=1}^{n} \alpha_i\, \alpha_j\, y_i\, y_j\, K(x_i, x_j) \\[2mm]
+\text{sous les contraintes} & 0 \le \alpha_i \le C,\quad i=1,\ldots,n, \\[2mm]
+ & \sum_{i=1}^{n} \alpha_i\, y_i = 0,
+\end{array}
+$$
+
+où :
+
+- \( \alpha_i \) sont les multiplicateurs de Lagrange,
+- \( y_i \in \{-1, +1\} \) sont les étiquettes des exemples,
+- \( K(x_i, x_j) \) est la fonction noyau,
+- \( C \) est le paramètre de régularisation.
+
+La solution optimale \( \alpha^* \) permet de retrouver la fonction de décision :
+
+$$
+f(x) = \sum_{i=1}^{n} \alpha_i\, y_i\, K(x_i,x) + b.
+$$
+
+# L'algorithme SMO
+
+L'algorithme SMO (Sequential Minimal Optimization) résout le problème dual en optimisant séquentiellement deux multiplicateurs \( \alpha_i \) et \( \alpha_j \) à la fois. Voici les étapes principales :
+
+## Initialisation et vérification des conditions KKT
+
+- **Initialisation** : On commence par fixer \( \alpha_i = 0 \) pour tout \( i \) et \( b = 0 \).
+- **Conditions KKT** : Pour chaque exemple \( x_i \), on vérifie si les conditions suivantes sont respectées :
+
+$$
+\begin{cases}
+\text{Si } \alpha_i = 0,\quad y_i\, f(x_i) \ge 1,\\[1mm]
+\text{Si } 0 < \alpha_i < C,\quad y_i\, f(x_i) = 1,\\[1mm]
+\text{Si } \alpha_i = C,\quad y_i\, f(x_i) \le 1.
+\end{cases}
+$$
+
+Lorsque ces conditions sont violées (avec une tolérance donnée), on sélectionne l'exemple pour mise à jour.
+
+- Première :
+$$
+\alpha_i + \beta_i = C \quad \Longrightarrow \quad \beta_i = C
+$$
+
+$$
+\beta_i \cdot s_i = 0 \quad \Longrightarrow \quad s_i = 0
+$$
+
+$$
+\Longrightarrow \langle w, x_i\rangle + b  \ge 1 - s_i = 1
+$$
+
+- Deuxième : 
+$$
+\,1 - s_i \;-\; y_i\bigl(\langle w, x_i\rangle + b\bigr) \;=\; 0
+$$
+
+$$
+\alpha_i + \beta_i \;=\; C 
+\quad\Longrightarrow\quad 
+\beta_i \;\neq\; 0
+$$
+
+$$
+\beta_i \cdot s_i = 0 \quad \Longrightarrow \quad s_i = 0
+$$
+
+$$
+\Longrightarrow y_i\bigl(\langle w, x_i\rangle + b\bigr) \;=\; 1
+$$
+
+- Troisième :
+$$
+\beta_i = 0 \quad \Longrightarrow \quad s_i \ge 0
+$$
+
+$$
+\alpha_i\bigl[y_i - s_i - y_i\bigl(\langle w, x_i\rangle + b\bigr)\bigr] = 0
+$$
+
+$$
+\Longrightarrow\; y_i\bigl(\langle w, x_i\rangle + b\bigr) = 1 - s_i \;\le\; 1
+$$
+
+## Sélection d'une paire \((\alpha_i, \alpha_j)\)
+
+- On choisit d'abord un indice \( i \) pour lequel la condition KKT est violée.
+- Ensuite, on choisit un second indice \( j \) (différent de \( i \)) en utilisant une heuristique (par exemple, maximiser \( |E_i - E_j| \) où \( E_k = f(x_k) - y_k \)).
+
+## Calcul des bornes \( L \) et \( H \)
+
+Pour assurer que les mises à jour respectent la contrainte d'égalité
+
+$$
+y_i \alpha_i + y_j \alpha_j = \text{constante},
+$$
+
+et que \( \alpha_i, \alpha_j \in [0, C] \), on définit :
+
+$$
+\begin{array}{ll}
+\text{Si } y_i \neq y_j: & L = \max(0,\, \alpha_j - \alpha_i), \quad H = \min(C,\, C + \alpha_j - \alpha_i), \\[2mm]
+\end{array}
+$$
+$$
+y_i \,\alpha_i^{\mathrm{new}} \;+\; y_j \,\alpha_j^{\mathrm{new}}
+\;=\;
+y_i \,\alpha_i^{\mathrm{old}} \;+\; y_j \,\alpha_j^{\mathrm{old}}
+$$
+
+$$
+\alpha_j^{\mathrm{new}}
+\;=\;
+\alpha_i^{\mathrm{new}}
+\;+\;
+\bigl(\alpha_j^{\mathrm{old}} \;-\;\alpha_i^{\mathrm{old}}\bigr)
+$$
+
+$$
+\alpha_i^{\mathrm{new}} \;\in\; [0,\,C],
+\quad
+\alpha_j^{\mathrm{new}} \;\in\; [0,\,C]
+$$
+
+$$
+\max\!\Bigl(0,\;\alpha_j^{\mathrm{old}} - \alpha_i^{\mathrm{old}}\Bigr)
+\;\;\le\;\;
+\alpha_j^{\mathrm{new}}
+\;\;\le\;\;
+\min\!\Bigl(C,\; C + \alpha_j^{\mathrm{old}} - \alpha_i^{\mathrm{old}}\Bigr)
+$$
+
+$$
+\begin{array}{ll}
+\text{Si } y_i = y_j: & L = \max(0,\, \alpha_i + \alpha_j - C), \quad H = \min(C,\, \alpha_i + \alpha_j).
+\end{array}
+$$
+
+$$
+\alpha_i^{\mathrm{old}} \;+\; \alpha_j^{\mathrm{old}}
+\;=\;
+\alpha_i^{\mathrm{new}} \;+\; \alpha_j^{\mathrm{new}}
+$$
+
+$$
+\alpha_j^{\mathrm{new}}
+\;=\;
+\alpha_i^{\mathrm{old}}
+\;+\;
+\alpha_j^{\mathrm{old}} \;-\;\alpha_i^{\mathrm{new}}
+$$
+
+$$
+\max\!\Bigl(0,\;\alpha_j^{\mathrm{old}} + \alpha_i^{\mathrm{old}} - C\Bigr) 
+\;\;\le\;\;
+\alpha_j^{\mathrm{new}}
+\;\;\le\;\;
+\min\!\Bigl(C,\; \alpha_j^{\mathrm{old}} + \alpha_i^{\mathrm{old}}\Bigr)
+$$
+
+Si \( L = H \), la mise à jour est impossible et on passe à une autre paire.
+
+## Calcul de \(\eta\)
+
+On définit :
+
+$$
+\eta = 2K(x_i,x_j) - K(x_i,x_i) - K(x_j,x_j).
+$$
+
+- \(\eta\) représente la courbure (ou la dérivée seconde) de la fonction objectif, réduite à la dimension de \( \alpha_j \).
+- Une valeur négative de \(\eta\) indique que la fonction objectif est concave dans la direction de \( \alpha_j \), ce qui est souhaitable pour maximiser \( W(\alpha) \).
+
+On considère la fonction objectif duale du SVM réduite à deux variables \(\alpha_i\) et \(\alpha_j\). On voit notamment :
+
+$$
+W(\alpha_i, \alpha_j)
+=
+\alpha_i + \alpha_j
+\;-\;
+\frac{1}{2}\Bigl[
+\alpha_i^2\,\|x_i\|^2
+\;+\;
+\alpha_j^2\,\|x_j\|^2
+\;+\;
+2\,\alpha_i\,\alpha_j\,y_i\,y_j\,\langle x_i, x_j\rangle
+\Bigr]
+\;+\;
+constantes.
+$$
+
+$$
+y_i^2 = 1 
+\quad \text{puisque} \quad 
+y_i \in \{-1, +1\}
+\quad \text{pour tout } i.
+$$
+Ensuite, en utilisant la relation
+
+$$
+\alpha_i^{\text{new}} = \alpha_i^{\text{old}} + y_i\,y_j\,\left(\alpha_j^{\text{old}} - \alpha_j^{\text{new}}\right).
+$$
+
+qui dérive de la contrainte linéaire, on peut réécrire \(W\) comme des termes linéaires en \(\alpha_j\) et une partie quadratique. On s’intéresse notamment à la dérivée seconde de \(W\) par rapport à \(\alpha_j\), qui mène à :
+
+$$
+\frac{\partial^2 W}{\partial \alpha_j^2}
+=
+2\,\langle x_i, x_j\rangle
+\;-\;
+\|x_i\|^2
+\;-\;
+\|x_j\|^2
+\;\equiv\;
+\eta.
+$$
+
+## Mise à jour de \(\alpha_j\) et \(\alpha_i\)
+
+La mise à jour de \( \alpha_j \) s'obtient par une étape analogue à celle de Newton (en optimisation unidimensionnelle) :
+
+$$
+\alpha_j^{\text{new}} = \alpha_j^{\text{old}} - \frac{y_j\,(E_i - E_j)}{\eta}.
+$$
+
+Puis, on « clippe » \( \alpha_j^{\text{new}} \) pour le contraindre à l'intervalle \([L, H]\). La méthde de Newton nous assure la convergence et on s’arrête lorsque la contribution est jugée négligeable, c’est-à-dire lorsque
+
+$$
+\bigl|\alpha_j^{\mathrm{new}} - \alpha_j^{\mathrm{old}}\bigr| < \text{tol}.
+$$
+
+Pour conserver la contrainte d'égalité, \( \alpha_i \) est mis à jour par :
+
+$$
+\alpha_i^{\text{new}} = \alpha_i^{\text{old}} + y_i\,y_j\,\left(\alpha_j^{\text{old}} - \alpha_j^{\text{new}}\right).
+$$
+
+Maintenant on démontre que le numérateur est bien la dérivé première de $W$ en $\alpha_j$ : 
+
+$$
+y_i (E_{i} - E_{j}) = y_j f(x_i) - y_i y_j - y_j f(x_j) + y_j^2
+$$
+
+$$
+= y_j \Big( \alpha_j y_j \langle x_j, x_i \rangle + \alpha_i y_i \| x_i \|^2 \Big) - y_i y_j + 1 - y_j \Big(  \alpha_j y_j \| x_j \|^2 + \alpha_i y_i \langle x_j, x_i \rangle \Big)
+$$
+
+$$
+= - y_i y_j + 1 + \alpha_j \Big( \langle x_j, x_i \rangle - \| x_j \|^2 \Big) + \alpha_i y_j y_i \Big(\| x_i \|^2 - \langle x_j, x_i \rangle\Big)
+$$
+
+$$
+\alpha_i (\alpha_{j}) = c_i + y_i y_j (c_j - \alpha_{j})
+$$
+
+$$
+W(\alpha_{j}) = \Big( c_i + y_i y_j (c_j - \alpha_{j}) \Big) + \alpha_{j} 
+- \frac{1}{2} \Bigg[ \| x_i \|^2 \Big( c_i + y_i y_j (c_j - \alpha_{j}) \Big)^2 
++ \alpha_{j}^2 \| x_j \|^2 
+$$
+
+$$
++ 2 y_i y_j \langle x_i, x_j \rangle \alpha_{j} \Big( c_i + y_i y_j (c_j - \alpha_{j}) \Big) \Bigg]
+$$
+
+$$
+\frac{\partial W}{\partial \alpha_j} = - y_i y_j + 1 
+- \frac{1}{2} \Big( 2 \| x_j \|^2 \alpha_j + \| x_i \|^2 \frac{\partial}{\partial \alpha_j} ( \alpha_i(\alpha_j) )^2 + 2 y_i y_j \langle x_i, x_j \rangle \frac{\partial}{\partial \alpha_j} ( \alpha_j \alpha_i (\alpha_j) )\Big)
+$$
+
+$$
+= - y_i y_j + 1 - \| x_j \|^2 \alpha_j - \| x_i \|^2 (- y_i y_j) \alpha_i (\alpha_j) - y_i y_j \langle x_i, x_j \rangle ( \alpha_i (\alpha_j) - y_i y_j \alpha_j )
+$$
+
+$$
+= - y_i y_j + 1 - \|x_j\|^2 \alpha_j + y_i y_j \|x_i\|^2 \alpha_i - y_i y_j \langle x_i, x_j \rangle \alpha_i + \langle x_i, x_j \rangle \alpha_j
+$$
+
+$$
+= - y_i y_j + 1 + \Big( \langle x_i, x_j \rangle - \|x_j\|^2 \Big) \alpha_j + y_i y_j \alpha_i \Big( \|x_i\|^2 - \langle x_i, x_j \rangle \Big)
+$$
+
+$$
+\Rightarrow \quad \frac{\partial W}{\partial \alpha_j} = y_j (E_i - E_{j})
+$$
+
+## Mise à jour du biais \( b \)
+
+Après la mise à jour de \( \alpha_i \) et \( \alpha_j \), le biais \( b \) doit être ajusté pour que la fonction de décision reste cohérente. Pour les exemples (support vectors) qui satisfont \( 0 < \alpha < C \), on souhaite que :
+
+$$
+y_k\, f(x_k) = 1 \quad \text{avec} \quad f(x_k)=\sum_{l=1}^{n}\alpha_l\,y_l\,K(x_l,x_k) + b.
+$$
+
+On peut obtenir deux valeurs candidates pour \( b \) en utilisant les exemples \( x_i \) et \( x_j \).
+
+### Dérivation de \( b_1 \) (à partir de \( x_i \))
+
+Pour \( x_i \), on écrit :
+
+$$
+y_i \left(\sum_{l=1}^{n}\alpha_l^{\text{new}}\,y_l\,K(x_l,x_i) + b_{\text{new}}\right) = 1.
+$$
+
+Isolant \( b_{\text{new}} \) :
+
+$$
+b_{\text{new}} = y_i - \sum_{l=1}^{n}\alpha_l^{\text{new}}\,y_l\,K(x_l,x_i).
+$$
+
+En notant que seuls \( \alpha_i \) et \( \alpha_j \) ont été modifiés, on peut écrire :
+
+$$
+\begin{aligned}
+b_1 &= y_i - \Biggl[ \left(\sum_{l\neq i,j}\alpha_l\,y_l\,K(x_l,x_i) \right) + \alpha_i^{\text{new}}\,y_i\,K(x_i,x_i) + \alpha_j^{\text{new}}\,y_j\,K(x_j,x_i) \Biggr] \\
+&= b - E_i - y_i\,(\alpha_i^{\text{new}} - \alpha_i^{\text{old}})\,K(x_i,x_i) - y_j\,(\alpha_j^{\text{new}} - \alpha_j^{\text{old}})\,K(x_i,x_j),
+\end{aligned}
+$$
+
+où l'erreur est définie par
+
+$$
+E_i = f(x_i) - y_i.
+$$
+
+### Dérivation de \( b_2 \) (à partir de \( x_j \))
+
+De manière analogue, pour \( x_j \) on obtient :
+
+$$
+\begin{aligned}
+b_2 &= b - E_j - y_i\,(\alpha_i^{\text{new}} - \alpha_i^{\text{old}})\,K(x_i,x_j) - y_j\,(\alpha_j^{\text{new}} - \alpha_j^{\text{old}})\,K(x_j,x_j),
+\end{aligned}
+$$
+
+avec
+
+$$
+E_j = f(x_j) - y_j.
+$$
+
+### Choix final du biais
+
+Le nouveau biais \( b \) est ensuite choisi de la manière suivante :
+
+- Si \( 0 < \alpha_i^{\text{new}} < C \), alors on prend \( b = b_1 \).
+
+- Sinon, si \( 0 < \alpha_j^{\text{new}} < C \), alors \( b = b_2 \).
+
+- Sinon, on peut utiliser la moyenne :
+
+$$
+b = \frac{b_1 + b_2}{2}.
+$$
+
+## Conclusion
+
+Nous avons ainsi détaillé l'algorithme SMO qui permet d'optimiser le problème dual du SVM en :
+
+1. Initialisant les multiplicateurs et en vérifiant les conditions KKT.
+2. Sélectionnant des paires \((\alpha_i, \alpha_j)\) à mettre à jour en respectant les contraintes.
+3. Calculant les bornes \( L \) et \( H \) pour garantir que les nouveaux \( \alpha \) restent dans \([0, C]\).
+4. Utilisant l'information de la dérivée seconde \(\eta\) pour effectuer une mise à jour (analogue à une étape de Newton) de \( \alpha_j \), et en ajustant \( \alpha_i \) pour maintenir la contrainte d'égalité.
+5. Calculant les mises à jour du biais \( b \) via les formules dérivées à partir des conditions \( y_k f(x_k)=1 \) pour les support vectors.
+
+Ce schéma permet de résoudre efficacement le problème d'optimisation en divisant le problème en sous-problèmes simples et analytiques, tout en respectant les contraintes imposées par la formulation du SVM.
+
+```{r}
+#--- Fonction SMO pour SVM linéaire ---
+SMO <- function(X, y, C, tol = 1e-3, max_passes = 5, max_iter = 1000) {
+  n <- nrow(X)
+  alphas <- rep(0, n)
+  b <- 0
+  passes <- 0
+  iter <- 0
+  E <- rep(0, n)
+  
+  # Fonction noyau linéaire
+  kernel <- function(x1, x2) {
+    return(sum(x1 * x2))
+  }
+  
+  while (passes < max_passes && iter < max_iter) {
+    num_changed_alphas <- 0
+    for (i in 1:n) {
+      # Calcul de f(x_i)
+      f_i <- sum(alphas * y * (X %*% X[i, ])) + b
+      E[i] <- f_i - y[i]
+      
+      # Vérifier si l'exemple viole les conditions KKT
+      if ((y[i] * E[i] < -tol && alphas[i] < C) || (y[i] * E[i] > tol && alphas[i] > 0)) {
+        # Sélectionner aléatoirement j différent de i
+        j <- sample(setdiff(1:n, i), 1)
+        f_j <- sum(alphas * y * (X %*% X[j, ])) + b
+        E[j] <- f_j - y[j]
+        
+        # Sauvegarder les anciennes valeurs de alpha
+        alpha_i_old <- alphas[i]
+        alpha_j_old <- alphas[j]
+        
+        # Calcul des bornes L et H pour alpha_j
+        if (y[i] != y[j]) {
+          L <- max(0, alphas[j] - alphas[i])
+          H <- min(C, C + alphas[j] - alphas[i])
+        } else {
+          L <- max(0, alphas[i] + alphas[j] - C)
+          H <- min(C, alphas[i] + alphas[j])
+        }
+        if (L == H) {
+          next
+        }
+        
+        # Calcul de eta
+        xi <- X[i, ]
+        xj <- X[j, ]
+        eta <- 2 * kernel(xi, xj) - kernel(xi, xi) - kernel(xj, xj)
+        if (eta >= 0) {
+          next
+        }
+        
+        # Mise à jour de alpha_j
+        alphas[j] <- alphas[j] - (y[j] * (E[i] - E[j])) / eta
+        
+        # Clipper alpha_j dans [L, H]
+        if (alphas[j] > H) {
+          alphas[j] <- H
+        } else if (alphas[j] < L) {
+          alphas[j] <- L
+        }
+        
+        # Vérifier que la modification est significative
+        if (abs(alphas[j] - alpha_j_old) < 1e-5) {
+          next
+        }
+        
+        # Mise à jour de alpha_i
+        alphas[i] <- alphas[i] + y[i] * y[j] * (alpha_j_old - alphas[j])
+        
+        # Calcul des biais b1 et b2
+        b1 <- b - E[i] - y[i] * (alphas[i] - alpha_i_old) * kernel(xi, xi) -
+          y[j] * (alphas[j] - alpha_j_old) * kernel(xi, xj)
+        b2 <- b - E[j] - y[i] * (alphas[i] - alpha_i_old) * kernel(xi, xj) -
+          y[j] * (alphas[j] - alpha_j_old) * kernel(xj, xj)
+        
+        # Mise à jour du biais b
+        if (alphas[i] > 0 && alphas[i] < C) {
+          b <- b1
+        } else if (alphas[j] > 0 && alphas[j] < C) {
+          b <- b2
+        } else {
+          b <- (b1 + b2) / 2
+        }
+        
+        num_changed_alphas <- num_changed_alphas + 1
+      } # fin si KKT
+    } # fin boucle sur i
+    
+    if (num_changed_alphas == 0) {
+      passes <- passes + 1
+    } else {
+      passes <- 0
+    }
+    iter <- iter + 1
+  } # fin while
+  
+  # Calcul du vecteur de poids w pour le SVM linéaire
+  w <- colSums(matrix(alphas * y, nrow = n, ncol = ncol(X)) * X)
+  return(list(alphas = alphas, b = b, w = w))
+}
+
+#--- Création d'un jeu de données synthétique ---
+
+set.seed(123)
+n <- 20
+# Classe 1
+X1 <- matrix(rnorm(2 * n, mean = 2, sd = 0.5), ncol = 2)
+# Classe -1
+X2 <- matrix(rnorm(2 * n, mean = -2, sd = 0.5), ncol = 2)
+# Regroupement
+X <- rbind(X1, X2)
+y <- c(rep(1, n), rep(-1, n))
+
+# Affichage des données
+plot(X, col = ifelse(y == 1, "blue", "red"), pch = 19,
+     xlab = "x1", ylab = "x2", main = "Jeu de données synthétique")
+
+#--- Entraînement du SVM avec l'algorithme SMO ---
+C <- 1
+model <- SMO(X, y, C = C, tol = 1e-3, max_passes = 5, max_iter = 1000)
+
+cat("Vecteur de poids w :", model$w, "\n")
+cat("Biais b :", model$b, "\n")
+
+#--- Tracer la frontière de décision ---
+# Pour un SVM linéaire, la frontière est définie par w[1]*x + w[2]*y + b = 0
+# On résout en y : y = -(w[1]*x + b) / w[2]
+x_vals <- seq(min(X[,1]) - 1, max(X[,1]) + 1, length.out = 100)
+y_vals <- -(model$w[1] * x_vals + model$b) / model$w[2]
+lines(x_vals, y_vals, col = "darkgreen", lwd = 2)
+
+```
+
+# SVM multiclasse
+
+```{r}
+# --- 2. Extension à la classification multiclasse via one-vs-all ---
+trainMultiSVM <- function(X, y, C = 1, tol = 1e-3, max_passes = 5, max_iter = 1000) {
+  classes <- sort(unique(y))
+  models <- list()
+  for (cls in classes) {
+    # Pour la classe "cls", les étiquettes sont : 1 si y == cls, sinon -1
+    y_binary <- ifelse(y == cls, 1, -1)
+    model <- SMO(X, y_binary, C = C, tol = tol, max_passes = max_passes, max_iter = max_iter)
+    models[[as.character(cls)]] <- model
+  }
+  return(models)
+}
+
+# Fonction de prédiction pour la classification multiclasse (one-vs-all)
+predictMultiSVM <- function(models, X) {
+  num_models <- length(models)
+  scores <- matrix(0, nrow = nrow(X), ncol = num_models)
+  class_names <- names(models)
+  for (i in seq_along(models)) {
+    model <- models[[i]]
+    # Fonction de décision : f(x) = w^T x + b
+    scores[, i] <- X %*% model$w + model$b
+  }
+  # Pour chaque observation, on choisit la classe dont le score est maximal
+  predicted_index <- max.col(scores)
+  predicted <- as.numeric(class_names[predicted_index])
+  return(predicted)
+}
+
+# --- 3. Création d'un jeu de données synthétique pour la classification multiclasse ---
+set.seed(123)
+n <- 50
+# Classe 1 : points autour de (2, 2)
+X1 <- matrix(rnorm(2 * n, mean = 2, sd = 0.5), ncol = 2)
+# Classe 2 : points autour de (-2, 2)
+X2 <- matrix(rnorm(2 * n, mean = -2, sd = 0.5), ncol = 2)
+# Classe 3 : points autour de (0, -2)
+X3 <- matrix(rnorm(2 * n, mean = 0, sd = 0.5), ncol = 2)
+X_multi <- rbind(X1, X2, X3)
+y_multi <- c(rep(1, n), rep(2, n), rep(3, n))
+
+# Visualisation des données
+plot(X_multi, col = y_multi, pch = 19, xlab = "x1", ylab = "x2",
+     main = "Jeu de données synthétique (3 classes)")
+
+# --- 4. Entraînement du classifieur multiclasse ---
+models <- trainMultiSVM(X_multi, y_multi, C = 1, tol = 1e-3, max_passes = 5, max_iter = 1000)
+
+# --- 5. Prédiction et évaluation sur les données d'entraînement ---
+y_pred <- predictMultiSVM(models, X_multi)
+cat("Taux de reconnaissance sur l'ensemble d'entraînement :", mean(y_pred == y_multi), "\n")
+
+# --- 6. Visualisation des frontières de décision ---
+x_range <- seq(min(X_multi[,1]) - 1, max(X_multi[,1]) + 1, length.out = 200)
+y_range <- seq(min(X_multi[,2]) - 1, max(X_multi[,2]) + 1, length.out = 200)
+grid <- expand.grid(x1 = x_range, x2 = y_range)
+grid_pred <- predictMultiSVM(models, as.matrix(grid))
+grid_mat <- matrix(grid_pred, nrow = length(x_range), ncol = length(y_range))
+
+# Tracer les frontières par contour
+contour(x_range, y_range, grid_mat, levels = sort(unique(y_multi)),
+        add = TRUE, drawlabels = FALSE, col = "darkgreen")
+points(X_multi, col = y_multi, pch = 19)
+
+# Performance
+library(caret)
+confusionMatrix(as.factor(y_pred), as.factor(y_multi))
+```
+
+# Petit jeu de données
+
+```{r}
+library(tidymodels)
+library(LiblineaR)
+library(kernlab)
+
+# Iris
+data(iris)
+head(iris)
+str(iris)
+
+# Partitionner le jeu de données
+iris_split <- initial_split(iris, prop = 0.7, strata = Species)
+iris_train <- training(iris_split)
+iris_test  <- testing(iris_split)
+iris_mat_train <- as.matrix(iris_train[,-5])
+iris_lab_train <- as.numeric(iris_train$Species)
+iris_mat_test <- as.matrix(iris_test[,-5])
+iris_lab_test <- as.numeric(iris_test$Species)
+```
+
+## SMO
+
+```{r}
+# Entraînement
+models <- trainMultiSVM(iris_mat_train, iris_lab_train, C = 1, tol = 1e-3, max_passes = 5, max_iter = 1000)
+
+# Prédiction
+y_pred <- predictMultiSVM(models, iris_mat_test)
+
+# Performence
+confusionMatrix(as.factor(y_pred), as.factor(iris_lab_test))
+```
+
+## SVM linear (dual)
+
+```{r}
+# Spécifier le modèle SVM linéaire (dual)
+svm_linear_spec <- svm_linear(mode = "classification", cost = 1) %>% 
+  set_engine("kernlab")
+
+# Créer une recette
+iris_recipe <- recipe(Species ~ ., data = iris_train)
+
+# Créer le workflow
+iris_wf <- workflow() %>%
+  add_model(svm_linear_spec) %>%
+  add_recipe(iris_recipe)
+
+# Entraîner le modèle
+iris_fit <- fit(iris_wf, data = iris_train)
+
+# Prédire sur le jeu de test
+iris_preds <- predict(iris_fit, new_data = iris_test) %>%
+  bind_cols(iris_test)
+
+# Évaluer la performance
+confusionMatrix(iris_preds$.pred_class, iris_test$Species)
+```
+
+## SVM linear (primal)
+
+```{r}
+# Spécifier le modèle SVM linéaire (primal)
+svm_linear_spec <- svm_linear(mode = "classification", cost = 1) %>% 
+  set_engine("LiblineaR")
+
+# Créer une recette
+iris_recipe <- recipe(Species ~ ., data = iris_train)
+
+# Créer le workflow
+iris_wf <- workflow() %>%
+  add_model(svm_linear_spec) %>%
+  add_recipe(iris_recipe)
+
+# Entraîner le modèle
+iris_fit <- fit(iris_wf, data = iris_train)
+
+# Prédire sur le jeu de test
+iris_preds <- predict(iris_fit, new_data = iris_test) %>%
+  bind_cols(iris_test)
+
+# Évaluer la performance
+confusionMatrix(iris_preds$.pred_class, iris_test$Species)
+```
+
+# Grand jeu de données
+
+```{r}
+# Spam
+data(spam)
+head(spam)
+str(spam)
+
+# Partitionner le jeu de données
+spam_split <- initial_split(spam, prop = 0.7, strata = type)
+spam_train <- training(spam_split)
+spam_test  <- testing(spam_split)
+spam_mat_train <- as.matrix(spam_train[,-58])
+spam_lab_train <- as.numeric(spam_train$type)
+spam_mat_test <- as.matrix(spam_test[,-58])
+spam_lab_test <- as.numeric(spam_test$type)
+```
+
+## SMO
+
+C'est très lent à exécuter.
+
+```{r eval=FALSE}
+# Entraînement
+models <- trainMultiSVM(spam_mat_train, spam_lab_train, C = 1, tol = 1e-3, max_passes = 5, max_iter = 1000)
+
+# Prédiction
+y_pred <- predictMultiSVM(models, spam_mat_test)
+
+# Performence
+confusionMatrix(as.factor(y_pred), as.factor(spam_lab_test))
+```
+
+## SVM linear (dual)
+
+Il arrive quand même à exécuter rapidement, puisque svm_linear renvoie à un SMO écrit dans un langage compilé tel que C ou C++.
+
+```{r}
+# Spécifier le modèle SVM linéaire (dual)
+svm_linear_spec <- svm_linear(mode = "classification", cost = 1) %>% 
+  set_engine("kernlab")
+
+# Créer une recette
+spam_recipe <- recipe(type ~ ., data = spam_train)
+
+# Créer le workflow
+spam_wf <- workflow() %>%
+  add_model(svm_linear_spec) %>%
+  add_recipe(spam_recipe)
+
+# Entraîner le modèle
+spam_fit <- fit(spam_wf, data = spam_train)
+
+# Prédire sur le jeu de test
+spam_preds <- predict(spam_fit, new_data = spam_test) %>%
+  bind_cols(spam_test)
+
+# Évaluer la performance
+confusionMatrix(spam_preds$.pred_class, spam_test$type)
+```
+
+## SVM linear (primal)
+
+```{r}
+# Spécifier le modèle SVM linéaire (primal)
+svm_linear_spec <- svm_linear(mode = "classification", cost = 1) %>% 
+  set_engine("LiblineaR")
+
+# Créer une recette
+spam_recipe <- recipe(type ~ ., data = spam_train)
+
+# Créer le workflow
+spam_wf <- workflow() %>%
+  add_model(svm_linear_spec) %>%
+  add_recipe(spam_recipe)
+
+# Entraîner le modèle
+spam_fit <- fit(spam_wf, data = spam_train)
+
+# Prédire sur le jeu de test
+spam_preds <- predict(spam_fit, new_data = spam_test) %>%
+  bind_cols(spam_test)
+
+# Évaluer la performance
+confusionMatrix(spam_preds$.pred_class, spam_test$type)
+```
+
+# Conclusion : Primal vs Dual
+
+```{r, echo=FALSE}
+library(kableExtra)
+
+# Création du dataframe
+results <- data.frame(
+  Dataset = c("Petit (Iris)", "Petit (Iris)", "Grand (Spam)", "Grand (Spam)"),
+  Méthode = c("SVM Dual", "SVM Primal", "SVM Dual (2000 ex.)", "SVM Primal (4601 ex.)"),
+  Précision = c("🌟🌟🌟🌟🌟 (Élevée)", "🌟🌟🌟🌟 (Bonne)", "🌟🌟🌟 (Correct)", "🌟🌟🌟🌟 (Bonne)"),
+  F1_score = c("🌟🌟🌟🌟", "🌟🌟🌟🌟", "🌟🌟🌟", "🌟🌟🌟🌟"),
+  `Temps d’exécution` = c("⏳ Modéré", "⚡ Rapide", "🐌 Lente", "⚡ Très rapide !")
+)
+
+# Génération du tableau avec kable
+kable(results, format = "html", escape = FALSE) %>%
+  kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+```
+
